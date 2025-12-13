@@ -6,11 +6,19 @@ repositories {
 }
 
 android {
-    compileSdkVersion 28
+    namespace 'com.alamkanak.weekview'
+    compileSdkVersion 35
 
     defaultConfig {
-        minSdkVersion 14
-        targetSdkVersion 28
+        minSdkVersion 21
+        targetSdkVersion 35
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
     }
 }
 
@@ -20,7 +28,5 @@ configurations {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.0.2'
     javadocDeps 'androidx.appcompat:appcompat:1.0.2'
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
 }
 
-apply from: 'gradle-mvn-push.gradle'

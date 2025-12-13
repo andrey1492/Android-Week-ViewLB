@@ -272,11 +272,13 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             return true
         }
 
-        override fun onScroll(e1: MotionEvent, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
+        override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
             // Check if view is zoomed.
             if (mIsZooming)
                 return true
-
+            if (e1 == null) {
+                return false
+            }
             when (mCurrentScrollDirection) {
                 WeekView.Direction.NONE -> {
                     // Allow scrolling only in one direction.
@@ -341,10 +343,12 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             return true
         }
 
-        override fun onFling(e1: MotionEvent, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
             if (mIsZooming)
                 return true
-
+            if (e1 == null) {
+                return false
+            }
             if (mCurrentFlingDirection == Direction.LEFT && !isHorizontalFlingEnabled ||
                     mCurrentFlingDirection == Direction.RIGHT && !isHorizontalFlingEnabled ||
                     mCurrentFlingDirection == Direction.VERTICAL && !isVerticalFlingEnabled) {
@@ -1516,15 +1520,15 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
         // draw text on the left of the week days
         when {
-        //TODO set left column size based on possible text of sideTitle and sideSubtitle, or auto-resize text according to available space
+            //TODO set left column size based on possible text of sideTitle and sideSubtitle, or auto-resize text according to available space
             !TextUtils.isEmpty(sideTitleText) && TextUtils.isEmpty(sideSubtitleText) ->
-                canvas.drawText(sideTitleText, mHeaderColumnWidth / 2, (headerTitleAndSubtitleTextHeight + headerWeekDayTitleTextHeight) / 2.0f + weekDayHeaderRowPaddingTop, sideTitleTextPaint)
+                canvas.drawText(sideTitleText.toString(), mHeaderColumnWidth / 2, (headerTitleAndSubtitleTextHeight + headerWeekDayTitleTextHeight) / 2.0f + weekDayHeaderRowPaddingTop, sideTitleTextPaint)
             !TextUtils.isEmpty(sideTitleText) && !TextUtils.isEmpty(sideSubtitleText) -> {
-                canvas.drawText(sideTitleText, mHeaderColumnWidth / 2, headerWeekDayTitleTextHeight + weekDayHeaderRowPaddingTop, sideTitleTextPaint)
-                canvas.drawText(sideSubtitleText, mHeaderColumnWidth / 2, headerTitleAndSubtitleTextHeight + weekDayHeaderRowPaddingTop, sideSubtitleTextPaint)
+                canvas.drawText(sideTitleText.toString(), mHeaderColumnWidth / 2, headerWeekDayTitleTextHeight + weekDayHeaderRowPaddingTop, sideTitleTextPaint)
+                canvas.drawText(sideSubtitleText.toString(), mHeaderColumnWidth / 2, headerTitleAndSubtitleTextHeight + weekDayHeaderRowPaddingTop, sideSubtitleTextPaint)
             }
             TextUtils.isEmpty(sideTitleText) && !TextUtils.isEmpty(sideSubtitleText) ->
-                canvas.drawText(sideSubtitleText, mHeaderColumnWidth / 2, (headerTitleAndSubtitleTextHeight + sideSubtitleTextPaint.textSize) / 2.0f + weekDayHeaderRowPaddingTop, sideSubtitleTextPaint)
+                canvas.drawText(sideSubtitleText.toString(), mHeaderColumnWidth / 2, (headerTitleAndSubtitleTextHeight + sideSubtitleTextPaint.textSize) / 2.0f + weekDayHeaderRowPaddingTop, sideSubtitleTextPaint)
         }
 
         canvas.restore()
@@ -1581,7 +1585,7 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             val top = weekDaysHeight + spaceBetweenWeekDaysAndAllDayEvents + timeTextHeight / 2
             val bottom = top + allDayEventHeight
             canvas.clipRect(0f, 0f, top, bottom)
-            canvas.drawText(allDaySideTitleText, mHeaderColumnWidth / 2, (top + bottom) / 2, allDaySideTitleTextPaint)
+            canvas.drawText(allDaySideTitleText.toString(), mHeaderColumnWidth / 2, (top + bottom) / 2, allDaySideTitleTextPaint)
             canvas.restore()
         }
     }
