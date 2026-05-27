@@ -7,11 +7,11 @@ repositories {
 
 android {
     namespace 'com.alamkanak.weekview'
-    compileSdkVersion 35
+    compileSdkVersion 36
 
     defaultConfig {
         minSdkVersion 21
-        targetSdkVersion 35
+        targetSdkVersion 36
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
