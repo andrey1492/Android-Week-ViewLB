@@ -1805,25 +1805,27 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
             if (availableHeight >= lineHeight) {
                 // Calculate available number of line counts.
-                var availableLineCount = availableHeight / lineHeight
-                // Ellipsize text to fit into event rect: keep the lines that fit as laid out (with
-                // their own line breaks) and ellipsize only the last visible line, by one line's
-                // width. Ellipsizing the whole text against N * width ignored '\n', so text after a
-                // short first line got only that line's leftover width ("Mitc...").
+                val availableLineCount = availableHeight / lineHeight
+                // Ellipsize text to fit into event rect: every logical ('\n'-separated) line takes
+                // exactly one visual line, ellipsized at the column edge - no wrapping, no mid-word
+                // breaks. Lines that do not fit the height are joined with ' ' into the last visible
+                // line, ellipsized the same way. (Ellipsizing the whole text against N * width ignored
+                // '\n', so text after a short first line got only that line's leftover width.)
                 if (newEventIdentifier != event.id) {
-                    val fullLayout = textLayout
-                    while (availableLineCount > 0 && textLayout.height > availableHeight) {
-                        val cut = fullLayout.getLineStart(minOf(availableLineCount, fullLayout.lineCount) - 1)
-                        val tail = SpannableStringBuilder(bob, cut, bob.length)
-                        for (i in 0 until tail.length)
-                            if (tail[i] == '\n') tail.replace(i, i + 1, " ")
-                        val fitted = SpannableStringBuilder(bob, 0, cut)
-                                .append(TextUtils.ellipsize(tail, mEventTextPaint, availableWidth.toFloat(), TextUtils.TruncateAt.END))
-                        textLayout = StaticLayout(fitted, mEventTextPaint, availableWidth, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0f, false)
-
-                        // Reduce line count, in case word wrapping still overflows the rect.
-                        availableLineCount--
+                    val starts = arrayListOf(0)
+                    for (i in bob.indices)
+                        if (bob[i] == '\n') starts.add(i + 1)
+                    val shown = minOf(starts.size, availableLineCount)
+                    val fitted = SpannableStringBuilder()
+                    for (k in 0 until shown) {
+                        val end = if (k < shown - 1) starts[k + 1] - 1 else bob.length
+                        val line = SpannableStringBuilder(bob, starts[k], end)
+                        for (i in 0 until line.length)
+                            if (line[i] == '\n') line.replace(i, i + 1, " ")
+                        if (k > 0) fitted.append('\n')
+                        fitted.append(TextUtils.ellipsize(line, mEventTextPaint, availableWidth.toFloat(), TextUtils.TruncateAt.END))
                     }
+                    textLayout = StaticLayout(fitted, mEventTextPaint, availableWidth, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0f, false)
                 }
                 if (textLayout.height > availableHeight) return
 
