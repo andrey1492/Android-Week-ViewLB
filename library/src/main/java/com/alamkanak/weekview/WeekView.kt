@@ -1806,16 +1806,26 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             if (availableHeight >= lineHeight) {
                 // Calculate available number of line counts.
                 var availableLineCount = availableHeight / lineHeight
-                do {
-                    // Ellipsize text to fit into event rect.
-                    if (newEventIdentifier != event.id)
-                        textLayout = StaticLayout(TextUtils.ellipsize(bob, mEventTextPaint, (availableLineCount * availableWidth).toFloat(), TextUtils.TruncateAt.END), mEventTextPaint, (rect.right - originalLeft - (eventPadding * 2).toFloat()).toInt(), Layout.Alignment.ALIGN_NORMAL, 1.0f, 0f, false)
+                // Ellipsize text to fit into event rect: keep the lines that fit as laid out (with
+                // their own line breaks) and ellipsize only the last visible line, by one line's
+                // width. Ellipsizing the whole text against N * width ignored '\n', so text after a
+                // short first line got only that line's leftover width ("Mitc...").
+                if (newEventIdentifier != event.id) {
+                    val fullLayout = textLayout
+                    while (availableLineCount > 0 && textLayout.height > availableHeight) {
+                        val cut = fullLayout.getLineStart(minOf(availableLineCount, fullLayout.lineCount) - 1)
+                        val tail = SpannableStringBuilder(bob, cut, bob.length)
+                        for (i in 0 until tail.length)
+                            if (tail[i] == '\n') tail.replace(i, i + 1, " ")
+                        val fitted = SpannableStringBuilder(bob, 0, cut)
+                                .append(TextUtils.ellipsize(tail, mEventTextPaint, availableWidth.toFloat(), TextUtils.TruncateAt.END))
+                        textLayout = StaticLayout(fitted, mEventTextPaint, availableWidth, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0f, false)
 
-                    // Reduce line count.
-                    availableLineCount--
-
-                    // Repeat until text is short enough.
-                } while (textLayout.height > availableHeight)
+                        // Reduce line count, in case word wrapping still overflows the rect.
+                        availableLineCount--
+                    }
+                }
+                if (textLayout.height > availableHeight) return
 
                 // Draw text.
                 canvas.save()
