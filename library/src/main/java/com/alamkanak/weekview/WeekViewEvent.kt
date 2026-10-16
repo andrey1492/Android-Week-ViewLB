@@ -16,6 +16,11 @@ open class WeekViewEvent {
     var color: Int = 0
     val isAllDay: Boolean
     var shader: Shader? = null
+    /**
+     * Index of the '\n'-separated line of [name] that wraps at its ordinary spaces instead of being
+     * ellipsized to one line, and gets the visual lines it needs before the other lines. -1 = none.
+     */
+    var wrapLine: Int = -1
 
     /**CTOR for a single, all day event*/
     constructor(id: String?, name: String?, location: String? = null, allDayTime: Calendar, shader: Shader? = null) : this(id, name, location, allDayTime, allDayTime, true, shader)
@@ -87,6 +92,7 @@ open class WeekViewEvent {
         endTime.set(Calendar.MINUTE, 59)
         val event1 = WeekViewEvent(this.id, this.name, this.location, this.startTime, endTime, this.isAllDay)
         event1.color = this.color
+        event1.wrapLine = this.wrapLine
         events.add(event1)
         // Add other days.
         if (!isSameDay(this.startTime, this.endTime)) {
@@ -101,6 +107,7 @@ open class WeekViewEvent {
                 endOfOverDay.set(Calendar.MINUTE, 59)
                 val eventMore = WeekViewEvent(this.id, this.name, null, overDay, endOfOverDay, this.isAllDay)
                 eventMore.color = this.color
+                eventMore.wrapLine = this.wrapLine
                 events.add(eventMore)
 
                 // Add next day.
@@ -112,6 +119,7 @@ open class WeekViewEvent {
             startTime.set(Calendar.MINUTE, 0)
             val event2 = WeekViewEvent(this.id, this.name, this.location, startTime, this.endTime, this.isAllDay)
             event2.color = this.color
+            event2.wrapLine = this.wrapLine
             events.add(event2)
         }
         return events

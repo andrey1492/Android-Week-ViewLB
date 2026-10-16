@@ -1815,15 +1815,30 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                     val starts = arrayListOf(0)
                     for (i in bob.indices)
                         if (bob[i] == '\n') starts.add(i + 1)
-                    val shown = minOf(starts.size, availableLineCount)
+                    // The line event.wrapLine (the time range) is never ellipsized: it wraps at its
+                    // ordinary spaces and takes the visual lines it needs first. The other lines share
+                    // what is left, and are dropped when nothing is.
+                    val wrap = if (event.wrapLine in starts.indices) event.wrapLine else -1
+                    val wrapped = if (wrap >= 0) wrapAtSpaces(logicalLine(bob, starts, wrap), availableWidth).take(availableLineCount) else emptyList()
+                    val others = starts.indices.filter { it != wrap }
+                    val shown = minOf(others.size, availableLineCount - wrapped.size)
                     val fitted = SpannableStringBuilder()
-                    for (k in 0 until shown) {
-                        val end = if (k < shown - 1) starts[k + 1] - 1 else bob.length
-                        val line = SpannableStringBuilder(bob, starts[k], end)
-                        for (i in 0 until line.length)
-                            if (line[i] == '\n') line.replace(i, i + 1, " ")
-                        if (k > 0) fitted.append('\n')
-                        fitted.append(TextUtils.ellipsize(line, mEventTextPaint, availableWidth.toFloat(), TextUtils.TruncateAt.END))
+                    var visualLines = 0
+                    for (k in starts.indices) {
+                        val parts: List<CharSequence> = if (k == wrap) wrapped else {
+                            val pos = others.indexOf(k)
+                            if (pos >= shown) continue
+                            val line = SpannableStringBuilder()
+                            for (o in (if (pos < shown - 1) listOf(k) else others.subList(pos, others.size))) {
+                                if (line.isNotEmpty()) line.append(' ')
+                                line.append(logicalLine(bob, starts, o))
+                            }
+                            listOf(TextUtils.ellipsize(line, mEventTextPaint, availableWidth.toFloat(), TextUtils.TruncateAt.END))
+                        }
+                        for (part in parts) {
+                            if (visualLines++ > 0) fitted.append('\n')
+                            fitted.append(part)
+                        }
                     }
                     textLayout = StaticLayout(fitted, mEventTextPaint, availableWidth, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0f, false)
                 }
@@ -1836,6 +1851,32 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 canvas.restore()
             }
         }
+    }
+
+    /** The '\n'-separated line [k] of [text], whose lines begin at [starts], without its '\n'. */
+    private fun logicalLine(text: SpannableStringBuilder, starts: List<Int>, k: Int): CharSequence {
+        val end = if (k < starts.size - 1) starts[k + 1] - 1 else text.length
+        return text.subSequence(starts[k], end)
+    }
+
+    /**
+     * Splits [line] into visual lines no wider than [width], breaking only at ordinary spaces (a
+     * no-break space U+00A0 keeps its words together). A single word wider than [width] is ellipsized.
+     */
+    private fun wrapAtSpaces(line: CharSequence, width: Int): List<CharSequence> {
+        val parts = ArrayList<CharSequence>()
+        var start = 0
+        var fitEnd = -1
+        for (i in 0..line.length) {
+            if (i < line.length && line[i] != ' ') continue
+            if (fitEnd >= start && Layout.getDesiredWidth(line, start, i, mEventTextPaint) > width) {
+                parts.add(line.subSequence(start, fitEnd))
+                start = fitEnd + 1
+            }
+            fitEnd = i
+        }
+        parts.add(line.subSequence(start, line.length))
+        return parts.map { TextUtils.ellipsize(it, mEventTextPaint, width.toFloat(), TextUtils.TruncateAt.END) }
     }
 
     /**
