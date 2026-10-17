@@ -1312,6 +1312,28 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         canvas.restore()
     }
 
+    /**
+     * Draws one day-header label (title or subtitle) in the column starting at [columnStart].
+     * A label that fits is centred, as before. A label wider than the column (e.g. Arabic, whose
+     * "MMM"/"EEE" are full words, at a large font scale) is anchored to its reading-start edge -
+     * right for RTL text, left for LTR - and clipped at the column's far edge with no ellipsis,
+     * so the day number stays visible and the label never runs into the neighbouring day.
+     * [paint] is centre-aligned, so x is always the centre of the drawn text.
+     */
+    private fun drawHeaderLabel(canvas: Canvas, text: String, columnStart: Float, y: Float, paint: Paint) {
+        val textWidth = paint.measureText(text)
+        if (textWidth <= widthPerDay) {
+            canvas.drawText(text, columnStart + widthPerDay / 2, y, paint)
+            return
+        }
+        val isRtl = TextDirectionHeuristics.FIRSTSTRONG_LTR.isRtl(text, 0, text.length)
+        val x = if (isRtl) columnStart + widthPerDay - textWidth / 2 else columnStart + textWidth / 2
+        canvas.save()
+        canvas.clipRect(columnStart, 0f, columnStart + widthPerDay, height.toFloat())
+        canvas.drawText(text, x, y, paint)
+        canvas.restore()
+    }
+
     private fun drawHeaderRowAndEvents(canvas: Canvas) {
         // Calculate the available width for each day.
         widthPerDay = (width.toFloat() - mHeaderColumnWidth - (columnGap.toFloat() * (realNumberOfVisibleDays.toFloat() - 1.0f))) / realNumberOfVisibleDays.toFloat()
@@ -1563,12 +1585,12 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 }
                 // Draw the day labels title
                 val dayLabel = getFormattedWeekDayTitle(day)
-                canvas.drawText(dayLabel, startPixel + widthPerDay / 2, headerWeekDayTitleTextHeight + weekDayHeaderRowPaddingTop, if (isToday) mHeaderWeekDayTitleTodayTextPaint else mHeaderWeekDayTitleTextPaint)
+                drawHeaderLabel(canvas, dayLabel, startPixel, headerWeekDayTitleTextHeight + weekDayHeaderRowPaddingTop, if (isToday) mHeaderWeekDayTitleTodayTextPaint else mHeaderWeekDayTitleTextPaint)
 
                 //draw day subtitle
                 if (isSubtitleHeaderEnabled) {
                     val subtitleText = getFormattedWeekDaySubtitle(day)
-                    canvas.drawText(subtitleText, startPixel + widthPerDay / 2, headerTitleAndSubtitleTextHeight + weekDayHeaderRowPaddingTop,
+                    drawHeaderLabel(canvas, subtitleText, startPixel, headerTitleAndSubtitleTextHeight + weekDayHeaderRowPaddingTop,
                             if (isToday) mHeaderWeekDaySubtitleTodayTextPaint else mHeaderWeekDaySubtitleTextPaint)
                 }
                 if (containsAllDayEvent)
