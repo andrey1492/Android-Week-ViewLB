@@ -216,6 +216,11 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     var eventClickListener: EventClickListener? = null
     var eventLongPressListener: EventLongPressListener? = null
     /**
+     * Diagnostics: told about every event label whose fitting was non-trivial (re-measured after
+     * ellipsizing, dropped a line, or clipped). Null - the default - costs nothing.
+     */
+    var eventLabelFitListener: EventLabelFitListener? = null
+    /**
      *  event loader in the week view. Event loaders define the  interval after which the events
      * are loaded in week view. For a MonthLoader events are loaded for every month. You can define
      * your custom event loader by extending WeekViewLoader.
@@ -1833,42 +1838,65 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 // breaks. Lines that do not fit the height are joined with ' ' into the last visible
                 // line, ellipsized the same way. (Ellipsizing the whole text against N * width ignored
                 // '\n', so text after a short first line got only that line's leftover width.)
+                var clipped = false
                 if (newEventIdentifier != event.id) {
                     val starts = arrayListOf(0)
                     for (i in bob.indices)
                         if (bob[i] == '\n') starts.add(i + 1)
+                    val trace = if (eventLabelFitListener != null) FitTrace() else null
                     // The line event.wrapLine (the time range) is never ellipsized: it wraps at its
                     // ordinary spaces and takes the visual lines it needs first. The other lines share
                     // what is left, and are dropped when nothing is.
                     val wrap = if (event.wrapLine in starts.indices) event.wrapLine else -1
-                    val wrapped = if (wrap >= 0) wrapAtSpaces(logicalLine(bob, starts, wrap), availableWidth).take(availableLineCount) else emptyList()
+                    val wrapParts = if (wrap >= 0) wrapAtSpaces(logicalLine(bob, starts, wrap), availableWidth, trace) else emptyList()
                     val others = starts.indices.filter { it != wrap }
-                    val shown = minOf(others.size, availableLineCount - wrapped.size)
-                    val fitted = SpannableStringBuilder()
-                    var visualLines = 0
-                    for (k in starts.indices) {
-                        val parts: List<CharSequence> = if (k == wrap) wrapped else {
-                            val pos = others.indexOf(k)
-                            if (pos >= shown) continue
-                            val line = SpannableStringBuilder()
-                            for (o in (if (pos < shown - 1) listOf(k) else others.subList(pos, others.size))) {
-                                if (line.isNotEmpty()) line.append(' ')
-                                line.append(logicalLine(bob, starts, o))
+                    // The label laid out into at most lineBudget visual lines.
+                    fun buildFitted(lineBudget: Int): SpannableStringBuilder {
+                        val wrapped = wrapParts.take(lineBudget)
+                        val shown = minOf(others.size, lineBudget - wrapped.size)
+                        val fitted = SpannableStringBuilder()
+                        var visualLines = 0
+                        for (k in starts.indices) {
+                            val parts: List<CharSequence> = if (k == wrap) wrapped else {
+                                val pos = others.indexOf(k)
+                                if (pos >= shown) continue
+                                val line = SpannableStringBuilder()
+                                for (o in (if (pos < shown - 1) listOf(k) else others.subList(pos, others.size))) {
+                                    if (line.isNotEmpty()) line.append(' ')
+                                    line.append(logicalLine(bob, starts, o))
+                                }
+                                listOf(ellipsizeToFit(line, availableWidth, trace))
                             }
-                            listOf(TextUtils.ellipsize(line, mEventTextPaint, availableWidth.toFloat(), TextUtils.TruncateAt.END))
+                            for (part in parts) {
+                                if (visualLines++ > 0) fitted.append('\n')
+                                fitted.append(part)
+                            }
                         }
-                        for (part in parts) {
-                            if (visualLines++ > 0) fitted.append('\n')
-                            fitted.append(part)
-                        }
+                        return fitted
                     }
-                    textLayout = StaticLayout(fitted, mEventTextPaint, availableWidth, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0f, false)
-                }
-                if (textLayout.height > availableHeight) return
+                    // A label taller than the block used to be dropped whole here (`return`), leaving
+                    // an empty block. Give it one visual line less until it fits instead; the time
+                    // line keeps its priority, so the shortest label is the time alone. If even one
+                    // line does not fit, it is drawn clipped to the block - never nothing.
+                    var lineBudget = availableLineCount
+                    while (true) {
+                        textLayout = StaticLayout(buildFitted(lineBudget), mEventTextPaint, availableWidth, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0f, false)
+                        if (textLayout.height <= availableHeight || lineBudget <= 1) break
+                        lineBudget--
+                        trace?.recording = false
+                    }
+                    clipped = textLayout.height > availableHeight
+                    val listener = eventLabelFitListener
+                    if (listener != null && trace != null && (trace.attempts > 0 || lineBudget < availableLineCount || clipped))
+                        listener.onEventLabelFit(EventLabelFitReport(event.id, availableWidth, availableHeight,
+                                availableLineCount, trace.attempts, trace.before.toList(), trace.after.toList(),
+                                availableLineCount - lineBudget, textLayout.lineCount, clipped, bob.toString()))
+                } else if (textLayout.height > availableHeight) return
 
                 // Draw text.
                 canvas.save()
                 canvas.translate(originalLeft + eventPadding, originalTop + eventPadding)
+                if (clipped) canvas.clipRect(0, 0, availableWidth, availableHeight)
                 textLayout.draw(canvas)
                 canvas.restore()
             }
@@ -1885,7 +1913,7 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
      * Splits [line] into visual lines no wider than [width], breaking only at ordinary spaces (a
      * no-break space U+00A0 keeps its words together). A single word wider than [width] is ellipsized.
      */
-    private fun wrapAtSpaces(line: CharSequence, width: Int): List<CharSequence> {
+    private fun wrapAtSpaces(line: CharSequence, width: Int, trace: FitTrace?): List<CharSequence> {
         val parts = ArrayList<CharSequence>()
         var start = 0
         var fitEnd = -1
@@ -1898,7 +1926,53 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             fitEnd = i
         }
         parts.add(line.subSequence(start, line.length))
-        return parts.map { TextUtils.ellipsize(it, mEventTextPaint, width.toFloat(), TextUtils.TruncateAt.END) }
+        return parts.map { ellipsizeToFit(it, width, trace) }
+    }
+
+    /** What one [drawEventTitle] call did while fitting, for [EventLabelFitListener] only. */
+    private class FitTrace {
+        var attempts = 0
+        /** Widths are recorded for the first (full line budget) layout only. */
+        var recording = true
+        val before = ArrayList<Float>()
+        val after = ArrayList<Float>()
+    }
+
+    /**
+     * [TextUtils.ellipsize] of [text] to [width], re-measured with its spans the way [StaticLayout]
+     * measures it. ellipsize alone can return a line slightly wider than asked (its "…" is measured
+     * unstyled, and a cut Arabic word changes its final letter form), and StaticLayout then wraps it
+     * onto a line the block does not have. Narrows the budget by the overshoot, at most
+     * [MAX_FIT_ATTEMPTS] times; "" when no budget is left.
+     */
+    private fun ellipsizeToFit(text: CharSequence, width: Int, trace: FitTrace?): CharSequence {
+        val limit = width.toFloat()
+        var budget = limit
+        var out = TextUtils.ellipsize(text, mEventTextPaint, budget, TextUtils.TruncateAt.END)
+        // Not cut: ellipsize measured the whole text, with its spans - nothing to re-check.
+        if (out === text) return out
+        val first = Layout.getDesiredWidth(out, mEventTextPaint)
+        var measured = first
+        var attempts = 0
+        while (measured > limit && attempts < MAX_FIT_ATTEMPTS) {
+            attempts++
+            budget -= maxOf(measured - limit, 1f)
+            if (budget <= 0f) {
+                out = ""
+                measured = 0f
+                break
+            }
+            out = TextUtils.ellipsize(text, mEventTextPaint, budget, TextUtils.TruncateAt.END)
+            measured = Layout.getDesiredWidth(out, mEventTextPaint)
+        }
+        if (trace != null) {
+            trace.attempts += attempts
+            if (trace.recording) {
+                trace.before.add(first)
+                trace.after.add(measured)
+            }
+        }
+        return out
     }
 
     /**
@@ -2494,6 +2568,33 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         fun onEventLongPress(event: WeekViewEvent, eventRect: RectF)
     }
 
+    interface EventLabelFitListener {
+        /**
+         * Triggered when an event label needed more than one plain ellipsize to fit its block: a
+         * re-measure, a dropped line, or a clip. Diagnostics only - the library logs nothing itself.
+         */
+        fun onEventLabelFit(report: EventLabelFitReport)
+    }
+
+    /**
+     * What [drawEventTitle] did to fit one event label. Widths are in pixels; [partWidthsBefore] are
+     * the measured widths of the ellipsized parts as [TextUtils.ellipsize] first returned them,
+     * [partWidthsAfter] the same parts after re-measuring, both against [availableWidth].
+     */
+    data class EventLabelFitReport(
+        val eventId: String?,
+        val availableWidth: Int,
+        val availableHeight: Int,
+        val availableLineCount: Int,
+        val fitAttempts: Int,
+        val partWidthsBefore: List<Float>,
+        val partWidthsAfter: List<Float>,
+        val linesDropped: Int,
+        val drawnLines: Int,
+        val clipped: Boolean,
+        val label: String
+    )
+
     interface EmptyViewClickListener {
         /**
          * Triggered when the users clicks on a empty space of the calendar.
@@ -2600,6 +2701,9 @@ class WeekView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 //endregion interfaces
 
     companion object {
+        /** How many times [ellipsizeToFit] narrows its budget before giving up and using the result. */
+        private const val MAX_FIT_ATTEMPTS = 4
+
         @Deprecated("")
         val LENGTH_SHORT = 1
         @Deprecated("")
